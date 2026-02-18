@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Splitter</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="app-logo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+            </div>
+            <div>
+                <h1>Invoice Splitter</h1>
+                <p class="subtitle">Split multi-page PDFs into individually named files</p>
+            </div>
+        </header>
+
+        <main class="app-main">
+            <form id="splitForm" enctype="multipart/form-data">
+
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h2>Select PDF File</h2>
+                        <p>Choose the multi-page PDF you want to split into individual pages.</p>
+                        <div class="file-drop-zone" id="pdfDropZone">
+                            <input type="file" id="pdfInput" name="pdf" accept=".pdf" hidden>
+                            <div class="drop-zone-content">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                </svg>
+                                <span class="drop-text">Click to browse or drag & drop your PDF here</span>
+                                <span class="file-name" id="pdfFileName"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h2>Select Names File</h2>
+                        <p>A text file (.txt) with one name per line. Each name becomes a file name for the corresponding page.</p>
+                        <div class="file-drop-zone" id="namesDropZone">
+                            <input type="file" id="namesInput" name="names" accept=".txt,.csv,.text" hidden>
+                            <div class="drop-zone-content">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                </svg>
+                                <span class="drop-text">Click to browse or drag & drop your names file here</span>
+                                <span class="file-name" id="namesFileName"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step-card" id="passwordCard" style="display: none;">
+                    <div class="step-number">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                    </div>
+                    <div class="step-content">
+                        <h2>PDF Password</h2>
+                        <p>This PDF appears to be encrypted. Enter the password to unlock it.</p>
+                        <input type="password" id="passwordInput" name="password" class="text-input" placeholder="Enter PDF password">
+                    </div>
+                </div>
+
+                <div id="previewSection" class="preview-section" style="display: none;">
+                    <div class="preview-header">
+                        <h2>Preview</h2>
+                        <div id="matchStatus" class="match-status"></div>
+                    </div>
+                    <div class="preview-details">
+                        <div class="detail-card">
+                            <span class="detail-label">PDF Pages</span>
+                            <span class="detail-value" id="pageCount">-</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="detail-label">Names Found</span>
+                            <span class="detail-value" id="namesCount">-</span>
+                        </div>
+                    </div>
+                    <div class="names-preview" id="namesPreview"></div>
+                </div>
+
+                <div class="action-bar">
+                    <button type="submit" class="btn-primary" id="splitBtn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 5v14M5 12l7 7 7-7"/>
+                        </svg>
+                        <span>Split & Download</span>
+                    </button>
+                </div>
+            </form>
+
+            <div id="statusMessage" class="status-message" style="display: none;"></div>
+        </main>
+
+        <footer class="app-footer">
+            <p>Invoice Splitter v1.0 &mdash; Invoice Processing Tools</p>
+        </footer>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Splitting your PDF...</p>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
