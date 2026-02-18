@@ -138,6 +138,11 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("pdf", pdfInput.files[0]);
         formData.append("names", namesInput.files[0]);
 
+        const outputFolder = document.getElementById("outputFolder");
+        if (outputFolder && outputFolder.value.trim()) {
+            formData.append("output_folder", outputFolder.value.trim());
+        }
+
         const pw = document.getElementById("passwordInput");
         if (pw && pw.value) {
             formData.append("password", pw.value);

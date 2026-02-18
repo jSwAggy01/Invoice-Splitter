@@ -125,6 +125,13 @@ def split():
         elif len(names) < num_pages:
             names = names + [f"page-{i+1}" for i in range(len(names), num_pages)]
 
+        output_folder = request.form.get("output_folder", "").strip()
+        if not output_folder:
+            output_folder = "Split Invoices"
+        folder_sanitized = "".join(c for c in output_folder if c not in ILLEGAL_CHARS).strip()
+        if not folder_sanitized or folder_sanitized in {".", ".."}:
+            folder_sanitized = "Split Invoices"
+
         zip_buffer = io.BytesIO()
         used_names = set()
 
@@ -140,12 +147,11 @@ def split():
                 writer.write(pdf_buffer)
                 pdf_buffer.seek(0)
 
-                zf.writestr(unique_name, pdf_buffer.read())
+                zf.writestr(f"{folder_sanitized}/{unique_name}", pdf_buffer.read())
 
         zip_buffer.seek(0)
 
-        original_name = os.path.splitext(pdf_file.filename or "output")[0]
-        zip_filename = f"{original_name} - Split.zip"
+        zip_filename = f"{folder_sanitized}.zip"
 
         return send_file(
             zip_buffer,
