@@ -1,66 +1,50 @@
 /**
- * Invoice Splitter — app.js
- * Mirrors the full feature set of split_pdf_multi-page_invoices.py:
+ * Invoice Splitter — app.js  v2.0
+ * Features:
  *   - counts mode  : sequential pages, optional per-invoice count (Name, N)
  *   - ranges mode  : explicit page ranges (Name, start-end)
  *   - start-at     : skip leading pages in counts mode
  *   - strict       : hard validation of total coverage
- *   - password     : decrypt password-protected PDFs (pdf-lib supports this)
+ *   - password     : decrypt password-protected PDFs
+ *   - match preview: live table showing each invoice → pages assignment + status
  * All processing happens in the browser; nothing is uploaded.
  */
 
 "use strict";
 
 // ── State ────────────────────────────────────────────────────────────────────
-let pdfFile   = null;
-let namesFile = null;
-let mode      = "counts"; // "counts" | "ranges"
+let pdfFile      = null;
+let namesFile    = null;
+let pdfPageCount = 0;
+let mode         = "counts"; // "counts" | "ranges"
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Parsing Helpers ───────────────────────────────────────────────────────────
 
-/** Strip inline comments and whitespace from a raw line. */
-function stripComment(raw) {
-  return raw.split("#")[0].trim();
-}
+function stripComment(raw) { return raw.split("#")[0].trim(); }
 
-/** Read all non-empty, non-comment lines from text. */
 function readLines(text) {
-  return text
-    .split(/\r?\n/)
-    .map(stripComment)
-    .filter(Boolean);
+  return text.split(/\r?\n/).map(stripComment).filter(Boolean);
 }
 
-/** Sanitize a name into a safe filename (mirrors Python sanitize_filename). */
 function sanitizeFilename(name) {
-  // strip inline comment
   name = name.split("#")[0].trim();
-  // remove Windows-illegal chars
   name = name.replace(/[<>:"/\\|?*]/g, "").trim();
   if (!name || name === "." || name === "..") name = "unnamed";
   if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
   return name;
 }
 
-/** Make a unique filename to avoid collisions (like make_unique_path). */
 function makeUnique(name, usedSet) {
-  const dot = name.lastIndexOf(".");
+  const dot  = name.lastIndexOf(".");
   const base = dot >= 0 ? name.slice(0, dot) : name;
   const ext  = dot >= 0 ? name.slice(dot)    : "";
-  let candidate = name;
-  let counter = 1;
-  while (usedSet.has(candidate)) {
-    candidate = `${base}-${counter}${ext}`;
-    counter++;
-  }
+  let candidate = name, counter = 1;
+  while (usedSet.has(candidate)) candidate = `${base}-${counter++}${ext}`;
   usedSet.add(candidate);
   return candidate;
 }
 
-/**
- * Parse counts mode lines.
- * Returns [{name, count}]
- */
+/** Parse counts mode → [{name, count}] */
 function parseCounts(lines) {
   return lines.map(line => {
     const parts = line.split(/[,|\t]/).map(s => s.trim()).filter(Boolean);
@@ -69,47 +53,195 @@ function parseCounts(lines) {
     let count = 1;
     if (parts.length >= 2) {
       count = parseInt(parts[1], 10);
-      if (isNaN(count) || count <= 0) {
+      if (isNaN(count) || count <= 0)
         throw new Error(`Invalid page count on line: "${line}". Provide a positive integer.`);
-      }
     }
     return { name, count };
   }).filter(Boolean);
 }
 
-/**
- * Parse ranges mode lines.
- * Returns [{name, start, end}] (1-based inclusive)
- */
+/** Parse ranges mode → [{name, start, end}] (1-based inclusive) */
 function parseRanges(lines) {
   return lines.map(line => {
     const parts = line.split(/[,|\t]/).map(s => s.trim()).filter(Boolean);
-    if (parts.length < 2) {
+    if (parts.length < 2)
       throw new Error(`Missing range on line: "${line}". Expected "Name, start-end".`);
-    }
     const name = parts[0];
     const m = parts[1].match(/^(\d+)-(\d+)$/);
-    if (!m) {
+    if (!m)
       throw new Error(`Invalid range on line: "${line}". Expected "start-end" integers.`);
-    }
-    const start = parseInt(m[1], 10);
-    const end   = parseInt(m[2], 10);
-    if (start <= 0 || end <= 0 || end < start) {
+    const start = parseInt(m[1], 10), end = parseInt(m[2], 10);
+    if (start <= 0 || end <= 0 || end < start)
       throw new Error(`Range must be positive and start ≤ end. Got: ${start}-${end} on "${line}".`);
-    }
     return { name, start, end };
   });
 }
 
-// ── Core Split Functions ─────────────────────────────────────────────────────
+function rangeArr(start, end) {
+  const out = [];
+  for (let i = start; i < end; i++) out.push(i);
+  return out;
+}
+
+// ── Preview Builder ───────────────────────────────────────────────────────────
+
+/**
+ * Build a preview row list from parsed items + current settings.
+ * Returns an array of:
+ *   { name, pagesLabel, status, note }
+ * status: "ok" | "warn" | "leftover"
+ */
+function buildPreviewRows(lines, numPages, startAt, strict) {
+  const rows = [];
+
+  if (mode === "counts") {
+    let items;
+    try { items = parseCounts(lines); }
+    catch (e) { return [{ name: e.message, pagesLabel: "—", status: "warn", note: "parse error" }]; }
+
+    const startIdx = startAt - 1;
+    let cur = startIdx;
+
+    for (const { name, count } of items) {
+      const from = cur + 1;
+      const to   = Math.min(cur + count, numPages);
+      const actualCount = Math.max(0, to - cur);
+      let status = "ok", note = "";
+
+      if (cur >= numPages) {
+        status = "warn";
+        note = "beyond PDF end";
+        rows.push({ name, pagesLabel: "—", status, note });
+        continue;
+      }
+      if (actualCount < count) {
+        status = "warn";
+        note = `truncated (only ${actualCount} of ${count} pages available)`;
+      }
+
+      const label = actualCount === 1 ? `p.${from}` : `p.${from}–${to}`;
+      rows.push({ name, pagesLabel: label, status, note });
+      cur = to;
+    }
+
+    // Leftover pages
+    if (cur < numPages) {
+      for (let p = cur; p < numPages; p++) {
+        rows.push({
+          name: `leftover-page-${p + 1}`,
+          pagesLabel: `p.${p + 1}`,
+          status: "leftover",
+          note: "not in names file"
+        });
+      }
+    }
+
+    // Pages skipped by start-at
+    if (startIdx > 0) {
+      for (let p = 0; p < startIdx; p++) {
+        rows.unshift({
+          name: `(skipped — page ${p + 1})`,
+          pagesLabel: `p.${p + 1}`,
+          status: "leftover",
+          note: "before start-at"
+        });
+      }
+    }
+
+  } else {
+    // ranges mode
+    let items;
+    try { items = parseRanges(lines); }
+    catch (e) { return [{ name: e.message, pagesLabel: "—", status: "warn", note: "parse error" }]; }
+
+    // Check overlaps
+    const sorted = [...items].sort((a, b) => a.start - b.start);
+    const overlapSet = new Set();
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].start <= sorted[i-1].end) {
+        overlapSet.add(sorted[i-1].name);
+        overlapSet.add(sorted[i].name);
+      }
+    }
+
+    for (const { name, start, end } of items) {
+      let status = "ok", note = "";
+      if (start < 1 || end > numPages) {
+        status = "warn";
+        note = `out of bounds (PDF has ${numPages} pages)`;
+      } else if (overlapSet.has(name)) {
+        status = "warn";
+        note = "overlaps with another range";
+      }
+      const label = start === end ? `p.${start}` : `p.${start}–${end}`;
+      rows.push({ name, pagesLabel: label, status, note });
+    }
+
+    // Uncovered pages
+    const covered = new Set();
+    for (const { start, end } of items)
+      for (let p = start; p <= end; p++) covered.add(p);
+    for (let p = 1; p <= numPages; p++) {
+      if (!covered.has(p)) {
+        rows.push({
+          name: `(uncovered — page ${p})`,
+          pagesLabel: `p.${p}`,
+          status: "leftover",
+          note: "not assigned to any invoice"
+        });
+      }
+    }
+  }
+
+  return rows;
+}
+
+function renderPreviewTable(rows) {
+  const tbody = document.getElementById("match-tbody");
+  tbody.innerHTML = "";
+
+  rows.forEach((row, i) => {
+    const tr = document.createElement("tr");
+
+    const noteHtml = row.note
+      ? ` <span style="color:var(--text-dim);font-size:0.71rem;margin-left:6px">${escHtml(row.note)}</span>`
+      : "";
+
+    tr.innerHTML = `
+      <td>${i + 1}</td>
+      <td class="name-cell" title="${escHtml(row.name)}">${escHtml(sanitizeFilename(row.name))}</td>
+      <td class="pages-cell">${escHtml(row.pagesLabel)}</td>
+      <td><span class="status-pill ${row.status}">${statusLabel(row.status)}</span>${noteHtml}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("match-preview").classList.remove("hidden");
+}
+
+function statusLabel(s) {
+  if (s === "ok")       return "✓ matched";
+  if (s === "warn")     return "⚠ issue";
+  if (s === "leftover") return "◦ leftover";
+  return s;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// ── Core Split Functions ──────────────────────────────────────────────────────
 
 async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) {
   const numPages = pdfDoc.getPageCount();
-  const startIdx = startAt - 1; // 0-based
+  const startIdx = startAt - 1;
 
-  if (startAt < 1 || startAt > numPages) {
+  if (startAt < 1 || startAt > numPages)
     throw new Error(`Start-at must be between 1 and ${numPages}. Got: ${startAt}.`);
-  }
 
   const totalRequested = items.reduce((s, i) => s + i.count, 0);
   const remaining = numPages - startIdx;
@@ -123,39 +255,31 @@ async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) 
   } else if (startIdx + totalRequested > numPages) {
     warnings.push(`Counts exceed available pages. Last invoice(s) will be truncated.`);
   } else if (startIdx + totalRequested < numPages) {
-    warnings.push(`Counts cover fewer pages than available. ${remaining - totalRequested} leftover page(s) will be saved separately.`);
+    warnings.push(`Counts cover fewer pages than available. ${remaining - totalRequested} leftover page(s) saved separately.`);
   }
 
   const usedNames = new Set();
-  let currentIdx = startIdx;
+  let cur = startIdx;
 
   for (const { name, count } of items) {
     if (count <= 0) continue;
-    const endIdx = Math.min(currentIdx + count, numPages);
-    if (currentIdx >= numPages) break;
-
+    if (cur >= numPages) break;
+    const endIdx = Math.min(cur + count, numPages);
     const newPdf = await PDFLib.PDFDocument.create();
-    const pages  = await newPdf.copyPages(pdfDoc, range(currentIdx, endIdx));
+    const pages  = await newPdf.copyPages(pdfDoc, rangeArr(cur, endIdx));
     pages.forEach(p => newPdf.addPage(p));
-
-    const bytes   = await newPdf.save();
-    const outName = makeUnique(sanitizeFilename(name), usedNames);
-    zip.file(`${folderName}/${outName}`, bytes);
-    currentIdx = endIdx;
+    zip.file(`${folderName}/${makeUnique(sanitizeFilename(name), usedNames)}`, await newPdf.save());
+    cur = endIdx;
   }
 
-  // Leftovers
-  if (currentIdx < numPages && !strict) {
-    for (let p = currentIdx; p < numPages; p++) {
+  if (cur < numPages && !strict) {
+    for (let p = cur; p < numPages; p++) {
       const newPdf = await PDFLib.PDFDocument.create();
       const [page] = await newPdf.copyPages(pdfDoc, [p]);
       newPdf.addPage(page);
-      const bytes   = await newPdf.save();
-      const outName = makeUnique(sanitizeFilename(`leftover-page-${p + 1}`), usedNames);
-      zip.file(`${folderName}/${outName}`, bytes);
+      zip.file(`${folderName}/${makeUnique(sanitizeFilename(`leftover-page-${p+1}`), usedNames)}`, await newPdf.save());
     }
   }
-
   return warnings;
 }
 
@@ -163,22 +287,15 @@ async function splitRanges({ pdfDoc, items, strict, zip, folderName }) {
   const numPages = pdfDoc.getPageCount();
   const warnings = [];
 
-  // Validate bounds
   for (const { name, start, end } of items) {
-    if (start < 1 || end > numPages) {
-      throw new Error(
-        `Range out of bounds for "${name}": ${start}-${end} (PDF has ${numPages} pages).`
-      );
-    }
+    if (start < 1 || end > numPages)
+      throw new Error(`Range out of bounds for "${name}": ${start}-${end} (PDF has ${numPages} pages).`);
   }
 
-  // Check overlaps
-  const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end);
+  const sorted = [...items].sort((a, b) => a.start - b.start);
   for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1];
-    const cur  = sorted[i];
-    if (cur.start <= prev.end) {
-      const msg = `Overlapping ranges: "${prev.name}" ${prev.start}-${prev.end} overlaps "${cur.name}" ${cur.start}-${cur.end}.`;
+    if (sorted[i].start <= sorted[i-1].end) {
+      const msg = `Overlapping ranges: "${sorted[i-1].name}" ${sorted[i-1].start}-${sorted[i-1].end} overlaps "${sorted[i].name}" ${sorted[i].start}-${sorted[i].end}.`;
       if (strict) throw new Error(msg);
       warnings.push(msg);
     }
@@ -187,47 +304,14 @@ async function splitRanges({ pdfDoc, items, strict, zip, folderName }) {
   const usedNames = new Set();
   for (const { name, start, end } of items) {
     const newPdf = await PDFLib.PDFDocument.create();
-    const pages  = await newPdf.copyPages(pdfDoc, range(start - 1, end));
+    const pages  = await newPdf.copyPages(pdfDoc, rangeArr(start - 1, end));
     pages.forEach(p => newPdf.addPage(p));
-    const bytes   = await newPdf.save();
-    const outName = makeUnique(sanitizeFilename(name), usedNames);
-    zip.file(`${folderName}/${outName}`, bytes);
+    zip.file(`${folderName}/${makeUnique(sanitizeFilename(name), usedNames)}`, await newPdf.save());
   }
-
   return warnings;
 }
 
-/** range(start, end) → [start, start+1, ..., end-1] */
-function range(start, end) {
-  const out = [];
-  for (let i = start; i < end; i++) out.push(i);
-  return out;
-}
-
 // ── UI Helpers ────────────────────────────────────────────────────────────────
-
-function updatePreview() {
-  // We can't know page count without loading the PDF, so we show what we have
-  const statsBox = document.getElementById("preview-stats");
-  const statMode = document.getElementById("stat-mode");
-  statMode.textContent = mode;
-
-  // Update invoice count if names file is loaded
-  if (namesFile) {
-    namesFile.text().then(text => {
-      const lines = readLines(text);
-      document.getElementById("stat-invoices").textContent = lines.length;
-    }).catch(() => {});
-  } else {
-    document.getElementById("stat-invoices").textContent = "—";
-  }
-
-  setButtonState();
-}
-
-function setButtonState() {
-  document.getElementById("split-btn").disabled = !(pdfFile && namesFile);
-}
 
 function showBadge(which, name) {
   const badge = document.getElementById(`${which}-badge`);
@@ -237,7 +321,6 @@ function showBadge(which, name) {
 function hideBadge(which) {
   document.getElementById(`${which}-badge`).classList.add("hidden");
 }
-
 function setProgress(msg) {
   document.getElementById("progress-msg").textContent = msg;
   document.getElementById("progress-overlay").classList.remove("hidden");
@@ -245,7 +328,6 @@ function setProgress(msg) {
 function hideProgress() {
   document.getElementById("progress-overlay").classList.add("hidden");
 }
-
 function showWarning(msg) {
   const box = document.getElementById("warn-box");
   box.textContent = msg;
@@ -254,6 +336,61 @@ function showWarning(msg) {
 function clearWarning() {
   document.getElementById("warn-box").classList.add("hidden");
 }
+function setButtonState() {
+  document.getElementById("split-btn").disabled = !(pdfFile && namesFile);
+}
+
+/** Called whenever either file changes, mode changes, or start-at changes. */
+async function refreshPreview() {
+  document.getElementById("stat-mode").textContent = mode;
+
+  if (!namesFile) {
+    document.getElementById("stat-invoices").textContent = "—";
+    document.getElementById("stat-covered").textContent  = "—";
+    document.getElementById("match-preview").classList.add("hidden");
+    setButtonState();
+    return;
+  }
+
+  let text;
+  try { text = await namesFile.text(); } catch { return; }
+
+  const lines = readLines(text);
+  document.getElementById("stat-invoices").textContent = lines.length;
+
+  if (pdfPageCount > 0 && lines.length > 0) {
+    const startAt = parseInt(document.getElementById("start-at").value, 10) || 1;
+    const strict  = document.getElementById("strict-mode").checked;
+
+    // Calculate covered page count for the stat bar
+    let covered = 0;
+    try {
+      if (mode === "counts") {
+        const items = parseCounts(lines);
+        const total = items.reduce((s, i) => s + i.count, 0);
+        covered = Math.min(total, pdfPageCount - (startAt - 1));
+      } else {
+        const items = parseRanges(lines);
+        const pages = new Set();
+        items.forEach(({ start, end }) => {
+          for (let p = start; p <= Math.min(end, pdfPageCount); p++) pages.add(p);
+        });
+        covered = pages.size;
+      }
+    } catch { covered = "?"; }
+
+    document.getElementById("stat-covered").textContent = covered;
+
+    // Build and render preview table
+    const rows = buildPreviewRows(lines, pdfPageCount, startAt, strict);
+    renderPreviewTable(rows);
+  } else {
+    document.getElementById("stat-covered").textContent = "—";
+    document.getElementById("match-preview").classList.add("hidden");
+  }
+
+  setButtonState();
+}
 
 // ── Drop Zone Setup ───────────────────────────────────────────────────────────
 
@@ -261,18 +398,11 @@ function setupDropZone(dropId, inputId, accept, onFile) {
   const drop  = document.getElementById(dropId);
   const input = document.getElementById(inputId);
 
-  drop.addEventListener("click", () => input.click());
+  drop.addEventListener("click",  () => input.click());
   drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") input.click(); });
+  input.addEventListener("change", () => { if (input.files[0]) onFile(input.files[0]); input.value = ""; });
 
-  input.addEventListener("change", () => {
-    if (input.files[0]) onFile(input.files[0]);
-    input.value = "";
-  });
-
-  drop.addEventListener("dragover", e => {
-    e.preventDefault();
-    drop.classList.add("drag-over");
-  });
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("drag-over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
   drop.addEventListener("drop", e => {
     e.preventDefault();
@@ -293,35 +423,38 @@ function setupDropZone(dropId, inputId, accept, onFile) {
 document.addEventListener("DOMContentLoaded", () => {
 
   // PDF drop zone
-  setupDropZone("pdf-drop", "pdf-input", ["pdf"], file => {
+  setupDropZone("pdf-drop", "pdf-input", ["pdf"], async file => {
     pdfFile = file;
     showBadge("pdf", file.name);
+    pdfPageCount = 0;
+    document.getElementById("stat-pages").textContent = "…";
 
-    // Try to read page count immediately
-    file.arrayBuffer().then(async buf => {
-      try {
-        const doc = await PDFLib.PDFDocument.load(buf, { ignoreEncryption: true });
-        document.getElementById("stat-pages").textContent = doc.getPageCount();
-      } catch {
-        document.getElementById("stat-pages").textContent = "?";
-      }
-    });
-    updatePreview();
+    try {
+      const buf = await file.arrayBuffer();
+      const doc = await PDFLib.PDFDocument.load(buf, { ignoreEncryption: true });
+      pdfPageCount = doc.getPageCount();
+      document.getElementById("stat-pages").textContent = pdfPageCount;
+    } catch {
+      document.getElementById("stat-pages").textContent = "?";
+    }
+    refreshPreview();
   });
 
   document.getElementById("pdf-remove").addEventListener("click", e => {
     e.stopPropagation();
-    pdfFile = null;
+    pdfFile = null; pdfPageCount = 0;
     hideBadge("pdf");
     document.getElementById("stat-pages").textContent = "—";
-    updatePreview();
+    document.getElementById("stat-covered").textContent = "—";
+    document.getElementById("match-preview").classList.add("hidden");
+    setButtonState();
   });
 
   // Names file drop zone
   setupDropZone("names-drop", "names-input", ["txt", "text/plain"], file => {
     namesFile = file;
     showBadge("names", file.name);
-    updatePreview();
+    refreshPreview();
   });
 
   document.getElementById("names-remove").addEventListener("click", e => {
@@ -329,13 +462,12 @@ document.addEventListener("DOMContentLoaded", () => {
     namesFile = null;
     hideBadge("names");
     document.getElementById("stat-invoices").textContent = "—";
-    updatePreview();
+    document.getElementById("stat-covered").textContent  = "—";
+    document.getElementById("match-preview").classList.add("hidden");
+    setButtonState();
   });
 
   // Mode toggle
-  document.getElementById("mode-counts").addEventListener("click", () => setMode("counts"));
-  document.getElementById("mode-ranges").addEventListener("click", () => setMode("ranges"));
-
   function setMode(m) {
     mode = m;
     document.getElementById("mode-counts").classList.toggle("active", m === "counts");
@@ -343,8 +475,14 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("hint-counts").classList.toggle("hidden", m !== "counts");
     document.getElementById("hint-ranges").classList.toggle("hidden", m !== "ranges");
     document.getElementById("start-at-group").classList.toggle("hidden", m !== "counts");
-    updatePreview();
+    refreshPreview();
   }
+  document.getElementById("mode-counts").addEventListener("click", () => setMode("counts"));
+  document.getElementById("mode-ranges").addEventListener("click", () => setMode("ranges"));
+
+  // Re-run preview when start-at or strict changes
+  document.getElementById("start-at").addEventListener("input", refreshPreview);
+  document.getElementById("strict-mode").addEventListener("change", refreshPreview);
 
   // Split button
   document.getElementById("split-btn").addEventListener("click", runSplit);
@@ -365,21 +503,15 @@ async function runSplit() {
   setProgress("Loading files…");
 
   try {
-    const [pdfBuf, namesText] = await Promise.all([
-      pdfFile.arrayBuffer(),
-      namesFile.text(),
-    ]);
+    const [pdfBuf, namesText] = await Promise.all([pdfFile.arrayBuffer(), namesFile.text()]);
 
     setProgress("Loading PDF…");
-
     let pdfDoc;
     try {
-      const loadOpts = password ? { password } : {};
-      pdfDoc = await PDFLib.PDFDocument.load(pdfBuf, loadOpts);
+      pdfDoc = await PDFLib.PDFDocument.load(pdfBuf, password ? { password } : {});
     } catch (e) {
-      if (e.message && e.message.toLowerCase().includes("encrypt")) {
+      if (e.message && e.message.toLowerCase().includes("encrypt"))
         throw new Error("This PDF is password-protected. Enter the password in Options.");
-      }
       throw e;
     }
 
@@ -392,30 +524,18 @@ async function runSplit() {
     let warnings = [];
 
     setProgress("Splitting pages…");
-
     if (mode === "counts") {
-      const items = parseCounts(lines);
-      warnings = await splitCounts({ pdfDoc, items, startAt, strict, zip, folderName });
+      warnings = await splitCounts({ pdfDoc, items: parseCounts(lines), startAt, strict, zip, folderName });
     } else {
-      const items = parseRanges(lines);
-      // ranges mode: strict defaults ON unless user unchecked it
-      // We honour the checkbox here (user explicitly controls it)
-      const rangesStrict = strict !== false; // checkbox default is unchecked → treat as strict=true for ranges
-      // Actually: mirror the Python: ranges strict defaults ON
-      // If checkbox is OFF we still apply strict for ranges by convention — but let user override.
-      // For clarity: we use `strict` (the checkbox value) for both modes.
-      warnings = await splitRanges({ pdfDoc, items, strict, zip, folderName });
+      warnings = await splitRanges({ pdfDoc, items: parseRanges(lines), strict, zip, folderName });
     }
 
-    if (warnings.length) showWarning("⚠ " + warnings.join(" | "));
+    if (warnings.length) showWarning("⚠ " + warnings.join(" · "));
 
     setProgress("Building ZIP…");
     const zipBlob = await zip.generateAsync({ type: "blob" });
-
-    setProgress("Done!");
     hideProgress();
 
-    // Trigger download
     const a = document.createElement("a");
     a.href = URL.createObjectURL(zipBlob);
     a.download = `${folderName}.zip`;

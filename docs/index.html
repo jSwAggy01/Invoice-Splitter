@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Invoice Splitter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -28,14 +28,14 @@
         <div class="step-label"><span>01</span> PDF File</div>
         <div class="drop-zone" id="pdf-drop" tabindex="0" role="button" aria-label="Select PDF file">
           <div class="drop-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
           </div>
           <p class="drop-primary">Click to browse or drag &amp; drop</p>
           <p class="drop-secondary">PDF file (.pdf)</p>
           <input type="file" id="pdf-input" accept=".pdf" hidden />
         </div>
         <div class="file-badge hidden" id="pdf-badge">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
           <span id="pdf-badge-name">—</span>
           <button class="badge-remove" id="pdf-remove" aria-label="Remove PDF">×</button>
         </div>
@@ -45,7 +45,6 @@
       <section class="card" id="step-names">
         <div class="step-label"><span>02</span> Names File</div>
 
-        <!-- Mode toggle -->
         <div class="mode-toggle-group">
           <label class="mode-label">Splitting mode</label>
           <div class="mode-toggle" role="group">
@@ -54,16 +53,15 @@
           </div>
         </div>
 
-        <!-- Format hint -->
         <div class="format-hint" id="hint-counts">
-          <strong>counts mode</strong> — one invoice per line. Optionally append a page count after a comma, pipe, or tab.
+          <strong>Counts mode</strong> — pages consumed sequentially. Optionally append a page count per invoice (comma, pipe, or tab separator). Default is 1 page.
           <pre>Acme-Invoice-001
 BigCo-Invoice-002, 3
 Vendor-Invoice-003 | 2
 # lines starting with # are ignored</pre>
         </div>
         <div class="format-hint hidden" id="hint-ranges">
-          <strong>ranges mode</strong> — one invoice per line with an explicit page range <code>start-end</code> (1-based, inclusive).
+          <strong>Ranges mode</strong> — specify exact start–end page numbers for each invoice (1-based, inclusive).
           <pre>Acme-Invoice-001, 1-1
 BigCo-Invoice-002, 2-4
 Vendor-Invoice-003 | 5-6
@@ -72,14 +70,14 @@ Vendor-Invoice-003 | 5-6
 
         <div class="drop-zone" id="names-drop" tabindex="0" role="button" aria-label="Select names file">
           <div class="drop-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
           </div>
           <p class="drop-primary">Click to browse or drag &amp; drop</p>
           <p class="drop-secondary">Plain text file (.txt)</p>
           <input type="file" id="names-input" accept=".txt,text/plain" hidden />
         </div>
         <div class="file-badge hidden" id="names-badge">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
           <span id="names-badge-name">—</span>
           <button class="badge-remove" id="names-remove" aria-label="Remove names file">×</button>
         </div>
@@ -88,7 +86,6 @@ Vendor-Invoice-003 | 5-6
       <!-- STEP 3: Options -->
       <section class="card" id="step-options">
         <div class="step-label"><span>03</span> Options</div>
-
         <div class="options-grid">
 
           <div class="option-group">
@@ -98,15 +95,15 @@ Vendor-Invoice-003 | 5-6
           </div>
 
           <div class="option-group" id="start-at-group">
-            <label class="option-label" for="start-at">Start at page (counts mode)</label>
+            <label class="option-label" for="start-at">Start at page <span class="optional">(counts mode)</span></label>
             <input type="number" id="start-at" class="text-input narrow" value="1" min="1" />
-            <p class="option-hint">First PDF page to begin consuming (1-based). Useful to skip cover pages.</p>
+            <p class="option-hint">Skip leading pages, e.g. a cover sheet.</p>
           </div>
 
           <div class="option-group">
             <label class="option-label" for="password">PDF password <span class="optional">(optional)</span></label>
-            <input type="password" id="password" class="text-input" placeholder="Leave blank if not encrypted" />
-            <p class="option-hint">Encrypted PDFs require a password to split.</p>
+            <input type="password" id="password" class="text-input" placeholder="Leave blank if unencrypted" />
+            <p class="option-hint">Required for password-protected PDFs.</p>
           </div>
 
           <div class="option-group checkbox-group">
@@ -115,19 +112,17 @@ Vendor-Invoice-003 | 5-6
               <span class="checkbox-custom"></span>
               <span>Strict validation</span>
             </label>
-            <p class="option-hint">
-              Counts mode: total counts must exactly cover all remaining pages.<br />
-              Ranges mode: enabled by default — overlapping ranges will throw an error.
-            </p>
+            <p class="option-hint">Error on page count mismatches or overlapping ranges instead of warning.</p>
           </div>
 
         </div>
       </section>
 
-      <!-- PREVIEW + RUN -->
+      <!-- STEP 4: Preview & Run -->
       <section class="card" id="step-run">
         <div class="step-label"><span>04</span> Preview &amp; Split</div>
 
+        <!-- Summary stats -->
         <div class="preview-stats" id="preview-stats">
           <div class="stat">
             <span class="stat-val" id="stat-pages">—</span>
@@ -136,19 +131,40 @@ Vendor-Invoice-003 | 5-6
           <div class="stat-divider"></div>
           <div class="stat">
             <span class="stat-val" id="stat-invoices">—</span>
-            <span class="stat-key">invoices in names file</span>
+            <span class="stat-key">Invoices</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat">
+            <span class="stat-val" id="stat-coverage">—</span>
+            <span class="stat-key">Pages covered</span>
           </div>
           <div class="stat-divider"></div>
           <div class="stat">
             <span class="stat-val" id="stat-mode">—</span>
-            <span class="stat-key">mode</span>
+            <span class="stat-key">Mode</span>
           </div>
+        </div>
+
+        <!-- Match preview table (shown when both files loaded) -->
+        <div id="preview-table-wrap" class="hidden">
+          <table class="preview-table" aria-label="Page assignment preview">
+            <thead>
+              <tr>
+                <th class="col-idx">#</th>
+                <th class="col-name">Invoice name</th>
+                <th class="col-pages">Pages</th>
+                <th class="col-status">Status</th>
+              </tr>
+            </thead>
+            <tbody id="preview-tbody"></tbody>
+          </table>
+          <div class="preview-legend" id="preview-legend"></div>
         </div>
 
         <div class="warning-box hidden" id="warn-box"></div>
 
         <button class="split-btn" id="split-btn" disabled>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Split &amp; Download ZIP
         </button>
       </section>
@@ -163,7 +179,7 @@ Vendor-Invoice-003 | 5-6
     </div>
 
     <footer>
-      Invoice Splitter v2.0 — Static GitHub Pages Build &nbsp;·&nbsp; No data leaves your browser
+      Invoice Splitter v2.1 &nbsp;·&nbsp; Static GitHub Pages Build &nbsp;·&nbsp; No data leaves your browser
     </footer>
 
   </div>
