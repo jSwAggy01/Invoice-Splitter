@@ -75,18 +75,16 @@ header {
 }
 .logo-mark {
   flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 13px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.04em;
+}
+.logo-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 h1 {
   font-size: 1.25rem;
