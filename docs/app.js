@@ -325,12 +325,17 @@ function setButtonState() {
 }
 
 function showBadge(which, name) {
+  const drop  = document.getElementById(`${which}-drop`);
   const badge = document.getElementById(`${which}-badge`);
   badge.querySelector("span").textContent = name;
+  drop.classList.add("hidden");
   badge.classList.remove("hidden");
 }
 function hideBadge(which) {
-  document.getElementById(`${which}-badge`).classList.add("hidden");
+  const drop  = document.getElementById(`${which}-drop`);
+  const badge = document.getElementById(`${which}-badge`);
+  badge.classList.add("hidden");
+  drop.classList.remove("hidden");
 }
 
 function setProgress(msg) {

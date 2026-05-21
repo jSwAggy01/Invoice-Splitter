@@ -165,15 +165,15 @@ main { display: flex; flex-direction: column; gap: 14px; }
 .file-badge {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-top: 9px;
-  padding: 7px 11px;
+  gap: 10px;
+  padding: 14px 16px;
   background: var(--success-bg);
-  border: 1px solid var(--success-bdr);
+  border: 1.5px solid var(--success-bdr);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   color: var(--success);
+  cursor: default;
 }
 .file-badge svg { flex-shrink: 0; }
 .file-badge span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
