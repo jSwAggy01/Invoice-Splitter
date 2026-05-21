@@ -449,6 +449,7 @@ main { display: flex; flex-direction: column; gap: 14px; }
 .pill-warn    { background: var(--warn-bg);     color: var(--warn);     border: 1px solid var(--warn-bdr); }
 .pill-missing { background: var(--danger-bg);   color: var(--danger);   border: 1px solid var(--danger-bdr); }
 .pill-over    { background: var(--overflow-bg); color: var(--overflow); border: 1px solid var(--overflow-bdr); }
+.pill-pending { background: var(--surface-alt); color: var(--text-dim); border: 1px solid var(--border); }
 
 /* Preview legend */
 .preview-legend {

@@ -1,24 +1,27 @@
 /**
- * Invoice Splitter — app.js  v2.0
- * Features:
- *   - counts mode  : sequential pages, optional per-invoice count (Name, N)
- *   - ranges mode  : explicit page ranges (Name, start-end)
- *   - start-at     : skip leading pages in counts mode
- *   - strict       : hard validation of total coverage
- *   - password     : decrypt password-protected PDFs
- *   - match preview: live table showing each invoice → pages assignment + status
- * All processing happens in the browser; nothing is uploaded.
+ * Invoice Splitter — app.js  v2.1
+ *
+ * Mirrors split_pdf_multi-page_invoices.py feature set:
+ *   counts mode  : sequential pages, optional per-invoice count (Name, N)
+ *   ranges mode  : explicit page ranges (Name, start-end)
+ *   start-at     : skip leading pages in counts mode
+ *   strict       : hard validation of total coverage / overlaps
+ *   password     : decrypt password-protected PDFs
+ *
+ * Preview table: once both files are loaded, renders a row per invoice
+ * showing the assigned page(s) and a match status (OK / partial / missing /
+ * overflow / overlap).
  */
 
 "use strict";
 
 // ── State ────────────────────────────────────────────────────────────────────
-let pdfFile      = null;
-let namesFile    = null;
+let pdfFile    = null;
+let namesFile  = null;
 let pdfPageCount = 0;
-let mode         = "counts"; // "counts" | "ranges"
+let mode       = "counts";
 
-// ── Parsing Helpers ───────────────────────────────────────────────────────────
+// ── Pure helpers (mirror Python logic) ───────────────────────────────────────
 
 function stripComment(raw) { return raw.split("#")[0].trim(); }
 
@@ -39,12 +42,11 @@ function makeUnique(name, usedSet) {
   const base = dot >= 0 ? name.slice(0, dot) : name;
   const ext  = dot >= 0 ? name.slice(dot)    : "";
   let candidate = name, counter = 1;
-  while (usedSet.has(candidate)) candidate = `${base}-${counter++}${ext}`;
+  while (usedSet.has(candidate)) { candidate = `${base}-${counter++}${ext}`; }
   usedSet.add(candidate);
   return candidate;
 }
 
-/** Parse counts mode → [{name, count}] */
 function parseCounts(lines) {
   return lines.map(line => {
     const parts = line.split(/[,|\t]/).map(s => s.trim()).filter(Boolean);
@@ -60,7 +62,6 @@ function parseCounts(lines) {
   }).filter(Boolean);
 }
 
-/** Parse ranges mode → [{name, start, end}] (1-based inclusive) */
 function parseRanges(lines) {
   return lines.map(line => {
     const parts = line.split(/[,|\t]/).map(s => s.trim()).filter(Boolean);
@@ -77,164 +78,351 @@ function parseRanges(lines) {
   });
 }
 
-function rangeArr(start, end) {
+function pageRange(start, end) {
   const out = [];
   for (let i = start; i < end; i++) out.push(i);
   return out;
 }
 
-// ── Preview Builder ───────────────────────────────────────────────────────────
-
+// ── Preview / match computation ───────────────────────────────────────────────
 /**
- * Build a preview row list from parsed items + current settings.
- * Returns an array of:
- *   { name, pagesLabel, status, note }
- * status: "ok" | "warn" | "leftover"
+ * Returns an array of row descriptors for the preview table:
+ *  { index, name, pageLabel, status }
+ *
+ * status: "ok" | "partial" | "missing" | "overflow" | "overlap" | "pending"
+ *
+ * When numPages === 0 (PDF not yet loaded), rows are shown with status
+ * "pending" so the names list is at least visible.
  */
-function buildPreviewRows(lines, numPages, startAt, strict) {
+function computePreviewRows(namesText, numPages) {
+  const lines = readLines(namesText);
+  if (!lines.length) return [];
+
   const rows = [];
+  const pdfKnown = numPages > 0;
 
   if (mode === "counts") {
     let items;
     try { items = parseCounts(lines); }
-    catch (e) { return [{ name: e.message, pagesLabel: "—", status: "warn", note: "parse error" }]; }
-
-    const startIdx = startAt - 1;
-    let cur = startIdx;
-
-    for (const { name, count } of items) {
-      const from = cur + 1;
-      const to   = Math.min(cur + count, numPages);
-      const actualCount = Math.max(0, to - cur);
-      let status = "ok", note = "";
-
-      if (cur >= numPages) {
-        status = "warn";
-        note = "beyond PDF end";
-        rows.push({ name, pagesLabel: "—", status, note });
-        continue;
-      }
-      if (actualCount < count) {
-        status = "warn";
-        note = `truncated (only ${actualCount} of ${count} pages available)`;
-      }
-
-      const label = actualCount === 1 ? `p.${from}` : `p.${from}–${to}`;
-      rows.push({ name, pagesLabel: label, status, note });
-      cur = to;
+    catch (e) {
+      // Return a single error row instead of swallowing silently
+      return [{ index: "!", name: e.message, pageLabel: "—", status: "missing" }];
     }
+
+    if (!pdfKnown) {
+      // PDF not loaded yet — show names with pending status
+      return items.map((item, i) => ({
+        index: i + 1,
+        name: item.name,
+        pageLabel: item.count > 1 ? `${item.count} pages` : "1 page",
+        status: "pending"
+      }));
+    }
+
+    const startAt = parseInt(document.getElementById("start-at").value, 10) || 1;
+    let cursor = startAt - 1; // 0-based
+
+    items.forEach((item, i) => {
+      const startPage   = cursor + 1;   // 1-based display
+      const endPage     = Math.min(cursor + item.count, numPages);
+      const actualCount = endPage - cursor;
+      cursor += item.count;
+
+      let status, pageLabel;
+      if (startPage > numPages) {
+        status    = "missing";
+        pageLabel = "—";
+      } else if (actualCount < item.count) {
+        status    = "partial";
+        pageLabel = actualCount === 1
+          ? `p.${startPage}`
+          : `p.${startPage}–${endPage} (want ${item.count})`;
+      } else {
+        status    = "ok";
+        pageLabel = item.count === 1
+          ? `p.${startPage}`
+          : `p.${startPage}–${startPage + item.count - 1}`;
+      }
+      rows.push({ index: i + 1, name: item.name, pageLabel, status });
+    });
 
     // Leftover pages
-    if (cur < numPages) {
-      for (let p = cur; p < numPages; p++) {
-        rows.push({
-          name: `leftover-page-${p + 1}`,
-          pagesLabel: `p.${p + 1}`,
-          status: "leftover",
-          note: "not in names file"
-        });
-      }
-    }
-
-    // Pages skipped by start-at
-    if (startIdx > 0) {
-      for (let p = 0; p < startIdx; p++) {
-        rows.unshift({
-          name: `(skipped — page ${p + 1})`,
-          pagesLabel: `p.${p + 1}`,
-          status: "leftover",
-          note: "before start-at"
-        });
-      }
+    if (cursor < numPages) {
+      const leftoverCount = numPages - cursor;
+      rows.push({
+        index: items.length + 1,
+        name: `(${leftoverCount} leftover page${leftoverCount > 1 ? "s" : ""})`,
+        pageLabel: cursor + 1 === numPages
+          ? `p.${numPages}`
+          : `p.${cursor + 1}–${numPages}`,
+        status: "overflow"
+      });
     }
 
   } else {
     // ranges mode
     let items;
     try { items = parseRanges(lines); }
-    catch (e) { return [{ name: e.message, pagesLabel: "—", status: "warn", note: "parse error" }]; }
+    catch (e) {
+      return [{ index: "!", name: e.message, pageLabel: "—", status: "missing" }];
+    }
 
-    // Check overlaps
-    const sorted = [...items].sort((a, b) => a.start - b.start);
+    if (!pdfKnown) {
+      return items.map((item, i) => ({
+        index: i + 1,
+        name: item.name,
+        pageLabel: `p.${item.start}–${item.end}`,
+        status: "pending"
+      }));
+    }
+
+    // Detect overlaps
+    const sorted = [...items].map((it, i) => ({ ...it, origIdx: i }))
+      .sort((a, b) => a.start - b.start);
     const overlapSet = new Set();
     for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i].start <= sorted[i-1].end) {
-        overlapSet.add(sorted[i-1].name);
-        overlapSet.add(sorted[i].name);
+      if (sorted[i].start <= sorted[i - 1].end) {
+        overlapSet.add(sorted[i].origIdx);
+        overlapSet.add(sorted[i - 1].origIdx);
       }
     }
 
-    for (const { name, start, end } of items) {
-      let status = "ok", note = "";
-      if (start < 1 || end > numPages) {
-        status = "warn";
-        note = `out of bounds (PDF has ${numPages} pages)`;
-      } else if (overlapSet.has(name)) {
-        status = "warn";
-        note = "overlaps with another range";
+    items.forEach((item, i) => {
+      let status, pageLabel;
+      if (item.start > numPages || item.end > numPages) {
+        status    = "missing";
+        pageLabel = `p.${item.start}–${item.end} (out of bounds)`;
+      } else if (overlapSet.has(i)) {
+        status    = "overlap";
+        pageLabel = item.start === item.end ? `p.${item.start}` : `p.${item.start}–${item.end}`;
+      } else {
+        status    = "ok";
+        pageLabel = item.start === item.end ? `p.${item.start}` : `p.${item.start}–${item.end}`;
       }
-      const label = start === end ? `p.${start}` : `p.${start}–${end}`;
-      rows.push({ name, pagesLabel: label, status, note });
-    }
-
-    // Uncovered pages
-    const covered = new Set();
-    for (const { start, end } of items)
-      for (let p = start; p <= end; p++) covered.add(p);
-    for (let p = 1; p <= numPages; p++) {
-      if (!covered.has(p)) {
-        rows.push({
-          name: `(uncovered — page ${p})`,
-          pagesLabel: `p.${p}`,
-          status: "leftover",
-          note: "not assigned to any invoice"
-        });
-      }
-    }
+      rows.push({ index: i + 1, name: item.name, pageLabel, status });
+    });
   }
 
   return rows;
 }
 
+// ── Preview table rendering ───────────────────────────────────────────────────
+
+const STATUS_META = {
+  ok:       { label: "Matched",    cls: "pill-ok"      },
+  partial:  { label: "Truncated",  cls: "pill-warn"    },
+  missing:  { label: "No pages",   cls: "pill-missing" },
+  overflow: { label: "Leftover",   cls: "pill-over"    },
+  overlap:  { label: "Overlap",    cls: "pill-warn"    },
+  pending:  { label: "Awaiting PDF", cls: "pill-pending" },
+};
+
 function renderPreviewTable(rows) {
-  const tbody = document.getElementById("match-tbody");
-  tbody.innerHTML = "";
+  const wrap  = document.getElementById("preview-table-wrap");
+  const tbody = document.getElementById("preview-tbody");
+  const legend = document.getElementById("preview-legend");
 
-  rows.forEach((row, i) => {
-    const tr = document.createElement("tr");
+  if (!rows.length) { wrap.classList.add("hidden"); return; }
 
-    const noteHtml = row.note
-      ? ` <span style="color:var(--text-dim);font-size:0.71rem;margin-left:6px">${escHtml(row.note)}</span>`
-      : "";
+  tbody.innerHTML = rows.map(r => {
+    const meta = STATUS_META[r.status] || STATUS_META.ok;
+    const nameEscaped = escHtml(r.name);
+    const pageEscaped = escHtml(r.pageLabel);
+    return `<tr>
+      <td class="col-idx">${r.index}</td>
+      <td class="col-name">${nameEscaped}</td>
+      <td class="col-pages">${pageEscaped}</td>
+      <td class="col-status"><span class="pill ${meta.cls}">${meta.label}</span></td>
+    </tr>`;
+  }).join("");
 
-    tr.innerHTML = `
-      <td>${i + 1}</td>
-      <td class="name-cell" title="${escHtml(row.name)}">${escHtml(sanitizeFilename(row.name))}</td>
-      <td class="pages-cell">${escHtml(row.pagesLabel)}</td>
-      <td><span class="status-pill ${row.status}">${statusLabel(row.status)}</span>${noteHtml}</td>
-    `;
-    tbody.appendChild(tr);
+  // Build legend from statuses actually present
+  const seen = new Set(rows.map(r => r.status));
+  const legendItems = [];
+  for (const [key, meta] of Object.entries(STATUS_META)) {
+    if (seen.has(key)) {
+      legendItems.push(`<span class="pill ${meta.cls}">${meta.label}</span>`);
+    }
+  }
+  legend.innerHTML = legendItems.length
+    ? `<span style="color:var(--text-dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;">Legend:</span> ${legendItems.join(" ")}`
+    : "";
+
+  wrap.classList.remove("hidden");
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+function updatePreview() {
+  document.getElementById("stat-mode").textContent = mode;
+
+  if (namesFile) {
+    namesFile.text().then(text => {
+      const lines = readLines(text);
+      document.getElementById("stat-invoices").textContent = lines.length || "—";
+
+      // Coverage stat — only meaningful when PDF is loaded
+      if (pdfPageCount > 0) {
+        let covered = 0;
+        if (mode === "counts") {
+          try {
+            const items = parseCounts(lines);
+            const startAt = parseInt(document.getElementById("start-at").value, 10) || 1;
+            covered = Math.min(items.reduce((s, i) => s + i.count, 0), pdfPageCount - (startAt - 1));
+          } catch { covered = 0; }
+        } else {
+          try {
+            const items = parseRanges(lines);
+            const pageSet = new Set();
+            items.forEach(it => {
+              for (let p = it.start; p <= Math.min(it.end, pdfPageCount); p++) pageSet.add(p);
+            });
+            covered = pageSet.size;
+          } catch { covered = 0; }
+        }
+        document.getElementById("stat-coverage").textContent =
+          covered > 0 ? `${covered} / ${pdfPageCount}` : "—";
+      } else {
+        document.getElementById("stat-coverage").textContent = "—";
+      }
+
+      // Always render preview table once names file is present
+      const rows = computePreviewRows(text, pdfPageCount);
+      renderPreviewTable(rows);
+    }).catch(err => {
+      console.error("Preview error:", err);
+    });
+  } else {
+    document.getElementById("stat-invoices").textContent = "—";
+    document.getElementById("stat-coverage").textContent = "—";
+    document.getElementById("preview-table-wrap").classList.add("hidden");
+  }
+
+  setButtonState();
+}
+
+function setButtonState() {
+  document.getElementById("split-btn").disabled = !(pdfFile && namesFile);
+}
+
+function showBadge(which, name) {
+  const badge = document.getElementById(`${which}-badge`);
+  badge.querySelector("span").textContent = name;
+  badge.classList.remove("hidden");
+}
+function hideBadge(which) {
+  document.getElementById(`${which}-badge`).classList.add("hidden");
+}
+
+function setProgress(msg) {
+  document.getElementById("progress-msg").textContent = msg;
+  document.getElementById("progress-overlay").classList.remove("hidden");
+}
+function hideProgress() {
+  document.getElementById("progress-overlay").classList.add("hidden");
+}
+
+function showWarning(msg) {
+  const box = document.getElementById("warn-box");
+  box.textContent = msg;
+  box.classList.remove("hidden");
+}
+function clearWarning() {
+  document.getElementById("warn-box").classList.add("hidden");
+}
+
+// ── Drop zone setup ───────────────────────────────────────────────────────────
+
+function setupDropZone(dropId, inputId, acceptExts, onFile) {
+  const drop  = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+
+  drop.addEventListener("click", () => input.click());
+  drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") input.click(); });
+  input.addEventListener("change", () => { if (input.files[0]) onFile(input.files[0]); input.value = ""; });
+
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("drag-over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+  drop.addEventListener("drop", e => {
+    e.preventDefault();
+    drop.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (acceptExts.includes(ext)) { onFile(file); }
+    else { alert(`Wrong file type. Expected: ${acceptExts.join(", ")}`); }
+  });
+}
+
+// ── Event wiring ──────────────────────────────────────────────────────────────
+
+document.addEventListener("DOMContentLoaded", () => {
+
+  // PDF
+  setupDropZone("pdf-drop", "pdf-input", ["pdf"], file => {
+    pdfFile = file;
+    showBadge("pdf", file.name);
+    file.arrayBuffer().then(async buf => {
+      try {
+        const doc = await PDFLib.PDFDocument.load(buf, { ignoreEncryption: true });
+        pdfPageCount = doc.getPageCount();
+        document.getElementById("stat-pages").textContent = pdfPageCount;
+      } catch {
+        pdfPageCount = 0;
+        document.getElementById("stat-pages").textContent = "?";
+      }
+      updatePreview();
+    });
   });
 
-  document.getElementById("match-preview").classList.remove("hidden");
+  document.getElementById("pdf-remove").addEventListener("click", e => {
+    e.stopPropagation();
+    pdfFile = null; pdfPageCount = 0;
+    hideBadge("pdf");
+    document.getElementById("stat-pages").textContent = "—";
+    updatePreview();
+  });
+
+  // Names file
+  setupDropZone("names-drop", "names-input", ["txt"], file => {
+    namesFile = file;
+    showBadge("names", file.name);
+    updatePreview();
+  });
+
+  document.getElementById("names-remove").addEventListener("click", e => {
+    e.stopPropagation();
+    namesFile = null;
+    hideBadge("names");
+    updatePreview();
+  });
+
+  // Mode toggle
+  document.getElementById("mode-counts").addEventListener("click", () => setMode("counts"));
+  document.getElementById("mode-ranges").addEventListener("click", () => setMode("ranges"));
+
+  // Re-run preview when start-at changes
+  document.getElementById("start-at").addEventListener("input", updatePreview);
+
+  // Split button
+  document.getElementById("split-btn").addEventListener("click", runSplit);
+});
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("mode-counts").classList.toggle("active", m === "counts");
+  document.getElementById("mode-ranges").classList.toggle("active", m === "ranges");
+  document.getElementById("hint-counts").classList.toggle("hidden", m !== "counts");
+  document.getElementById("hint-ranges").classList.toggle("hidden", m !== "ranges");
+  document.getElementById("start-at-group").classList.toggle("hidden", m !== "counts");
+  updatePreview();
 }
 
-function statusLabel(s) {
-  if (s === "ok")       return "✓ matched";
-  if (s === "warn")     return "⚠ issue";
-  if (s === "leftover") return "◦ leftover";
-  return s;
-}
-
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-// ── Core Split Functions ──────────────────────────────────────────────────────
+// ── Core split functions ──────────────────────────────────────────────────────
 
 async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) {
   const numPages = pdfDoc.getPageCount();
@@ -253,33 +441,40 @@ async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) 
       `must exactly cover remaining pages (${remaining}).`
     );
   } else if (startIdx + totalRequested > numPages) {
-    warnings.push(`Counts exceed available pages. Last invoice(s) will be truncated.`);
+    warnings.push("Counts exceed available pages — last invoice(s) truncated.");
   } else if (startIdx + totalRequested < numPages) {
-    warnings.push(`Counts cover fewer pages than available. ${remaining - totalRequested} leftover page(s) saved separately.`);
+    warnings.push(`Counts cover ${totalRequested} of ${remaining} remaining pages. ${remaining - totalRequested} leftover page(s) saved separately.`);
   }
 
   const usedNames = new Set();
-  let cur = startIdx;
+  let cursor = startIdx;
 
   for (const { name, count } of items) {
     if (count <= 0) continue;
-    if (cur >= numPages) break;
-    const endIdx = Math.min(cur + count, numPages);
+    const endIdx = Math.min(cursor + count, numPages);
+    if (cursor >= numPages) break;
+
     const newPdf = await PDFLib.PDFDocument.create();
-    const pages  = await newPdf.copyPages(pdfDoc, rangeArr(cur, endIdx));
+    const pages  = await newPdf.copyPages(pdfDoc, pageRange(cursor, endIdx));
     pages.forEach(p => newPdf.addPage(p));
-    zip.file(`${folderName}/${makeUnique(sanitizeFilename(name), usedNames)}`, await newPdf.save());
-    cur = endIdx;
+    const bytes   = await newPdf.save();
+    const outName = makeUnique(sanitizeFilename(name), usedNames);
+    zip.file(`${folderName}/${outName}`, bytes);
+    cursor = endIdx;
   }
 
-  if (cur < numPages && !strict) {
-    for (let p = cur; p < numPages; p++) {
+  // Leftovers
+  if (cursor < numPages && !strict) {
+    for (let p = cursor; p < numPages; p++) {
       const newPdf = await PDFLib.PDFDocument.create();
       const [page] = await newPdf.copyPages(pdfDoc, [p]);
       newPdf.addPage(page);
-      zip.file(`${folderName}/${makeUnique(sanitizeFilename(`leftover-page-${p+1}`), usedNames)}`, await newPdf.save());
+      const bytes   = await newPdf.save();
+      const outName = makeUnique(sanitizeFilename(`leftover-page-${p + 1}`), usedNames);
+      zip.file(`${folderName}/${outName}`, bytes);
     }
   }
+
   return warnings;
 }
 
@@ -295,7 +490,7 @@ async function splitRanges({ pdfDoc, items, strict, zip, folderName }) {
   const sorted = [...items].sort((a, b) => a.start - b.start);
   for (let i = 1; i < sorted.length; i++) {
     if (sorted[i].start <= sorted[i-1].end) {
-      const msg = `Overlapping ranges: "${sorted[i-1].name}" ${sorted[i-1].start}-${sorted[i-1].end} overlaps "${sorted[i].name}" ${sorted[i].start}-${sorted[i].end}.`;
+      const msg = `Overlapping ranges: "${sorted[i-1].name}" ${sorted[i-1].start}-${sorted[i-1].end} and "${sorted[i].name}" ${sorted[i].start}-${sorted[i].end}.`;
       if (strict) throw new Error(msg);
       warnings.push(msg);
     }
@@ -304,191 +499,23 @@ async function splitRanges({ pdfDoc, items, strict, zip, folderName }) {
   const usedNames = new Set();
   for (const { name, start, end } of items) {
     const newPdf = await PDFLib.PDFDocument.create();
-    const pages  = await newPdf.copyPages(pdfDoc, rangeArr(start - 1, end));
+    const pages  = await newPdf.copyPages(pdfDoc, pageRange(start - 1, end));
     pages.forEach(p => newPdf.addPage(p));
-    zip.file(`${folderName}/${makeUnique(sanitizeFilename(name), usedNames)}`, await newPdf.save());
+    const bytes   = await newPdf.save();
+    const outName = makeUnique(sanitizeFilename(name), usedNames);
+    zip.file(`${folderName}/${outName}`, bytes);
   }
+
   return warnings;
 }
 
-// ── UI Helpers ────────────────────────────────────────────────────────────────
-
-function showBadge(which, name) {
-  const badge = document.getElementById(`${which}-badge`);
-  badge.querySelector("span").textContent = name;
-  badge.classList.remove("hidden");
-}
-function hideBadge(which) {
-  document.getElementById(`${which}-badge`).classList.add("hidden");
-}
-function setProgress(msg) {
-  document.getElementById("progress-msg").textContent = msg;
-  document.getElementById("progress-overlay").classList.remove("hidden");
-}
-function hideProgress() {
-  document.getElementById("progress-overlay").classList.add("hidden");
-}
-function showWarning(msg) {
-  const box = document.getElementById("warn-box");
-  box.textContent = msg;
-  box.classList.remove("hidden");
-}
-function clearWarning() {
-  document.getElementById("warn-box").classList.add("hidden");
-}
-function setButtonState() {
-  document.getElementById("split-btn").disabled = !(pdfFile && namesFile);
+function pageRange(start, end) {
+  const out = [];
+  for (let i = start; i < end; i++) out.push(i);
+  return out;
 }
 
-/** Called whenever either file changes, mode changes, or start-at changes. */
-async function refreshPreview() {
-  document.getElementById("stat-mode").textContent = mode;
-
-  if (!namesFile) {
-    document.getElementById("stat-invoices").textContent = "—";
-    document.getElementById("stat-covered").textContent  = "—";
-    document.getElementById("match-preview").classList.add("hidden");
-    setButtonState();
-    return;
-  }
-
-  let text;
-  try { text = await namesFile.text(); } catch { return; }
-
-  const lines = readLines(text);
-  document.getElementById("stat-invoices").textContent = lines.length;
-
-  if (pdfPageCount > 0 && lines.length > 0) {
-    const startAt = parseInt(document.getElementById("start-at").value, 10) || 1;
-    const strict  = document.getElementById("strict-mode").checked;
-
-    // Calculate covered page count for the stat bar
-    let covered = 0;
-    try {
-      if (mode === "counts") {
-        const items = parseCounts(lines);
-        const total = items.reduce((s, i) => s + i.count, 0);
-        covered = Math.min(total, pdfPageCount - (startAt - 1));
-      } else {
-        const items = parseRanges(lines);
-        const pages = new Set();
-        items.forEach(({ start, end }) => {
-          for (let p = start; p <= Math.min(end, pdfPageCount); p++) pages.add(p);
-        });
-        covered = pages.size;
-      }
-    } catch { covered = "?"; }
-
-    document.getElementById("stat-covered").textContent = covered;
-
-    // Build and render preview table
-    const rows = buildPreviewRows(lines, pdfPageCount, startAt, strict);
-    renderPreviewTable(rows);
-  } else {
-    document.getElementById("stat-covered").textContent = "—";
-    document.getElementById("match-preview").classList.add("hidden");
-  }
-
-  setButtonState();
-}
-
-// ── Drop Zone Setup ───────────────────────────────────────────────────────────
-
-function setupDropZone(dropId, inputId, accept, onFile) {
-  const drop  = document.getElementById(dropId);
-  const input = document.getElementById(inputId);
-
-  drop.addEventListener("click",  () => input.click());
-  drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") input.click(); });
-  input.addEventListener("change", () => { if (input.files[0]) onFile(input.files[0]); input.value = ""; });
-
-  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("drag-over"); });
-  drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
-  drop.addEventListener("drop", e => {
-    e.preventDefault();
-    drop.classList.remove("drag-over");
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    const ext = file.name.split(".").pop().toLowerCase();
-    if (accept.includes(ext) || accept.includes(file.type)) {
-      onFile(file);
-    } else {
-      alert(`Wrong file type. Expected: ${accept.join(", ")}`);
-    }
-  });
-}
-
-// ── Event Wiring ──────────────────────────────────────────────────────────────
-
-document.addEventListener("DOMContentLoaded", () => {
-
-  // PDF drop zone
-  setupDropZone("pdf-drop", "pdf-input", ["pdf"], async file => {
-    pdfFile = file;
-    showBadge("pdf", file.name);
-    pdfPageCount = 0;
-    document.getElementById("stat-pages").textContent = "…";
-
-    try {
-      const buf = await file.arrayBuffer();
-      const doc = await PDFLib.PDFDocument.load(buf, { ignoreEncryption: true });
-      pdfPageCount = doc.getPageCount();
-      document.getElementById("stat-pages").textContent = pdfPageCount;
-    } catch {
-      document.getElementById("stat-pages").textContent = "?";
-    }
-    refreshPreview();
-  });
-
-  document.getElementById("pdf-remove").addEventListener("click", e => {
-    e.stopPropagation();
-    pdfFile = null; pdfPageCount = 0;
-    hideBadge("pdf");
-    document.getElementById("stat-pages").textContent = "—";
-    document.getElementById("stat-covered").textContent = "—";
-    document.getElementById("match-preview").classList.add("hidden");
-    setButtonState();
-  });
-
-  // Names file drop zone
-  setupDropZone("names-drop", "names-input", ["txt", "text/plain"], file => {
-    namesFile = file;
-    showBadge("names", file.name);
-    refreshPreview();
-  });
-
-  document.getElementById("names-remove").addEventListener("click", e => {
-    e.stopPropagation();
-    namesFile = null;
-    hideBadge("names");
-    document.getElementById("stat-invoices").textContent = "—";
-    document.getElementById("stat-covered").textContent  = "—";
-    document.getElementById("match-preview").classList.add("hidden");
-    setButtonState();
-  });
-
-  // Mode toggle
-  function setMode(m) {
-    mode = m;
-    document.getElementById("mode-counts").classList.toggle("active", m === "counts");
-    document.getElementById("mode-ranges").classList.toggle("active", m === "ranges");
-    document.getElementById("hint-counts").classList.toggle("hidden", m !== "counts");
-    document.getElementById("hint-ranges").classList.toggle("hidden", m !== "ranges");
-    document.getElementById("start-at-group").classList.toggle("hidden", m !== "counts");
-    refreshPreview();
-  }
-  document.getElementById("mode-counts").addEventListener("click", () => setMode("counts"));
-  document.getElementById("mode-ranges").addEventListener("click", () => setMode("ranges"));
-
-  // Re-run preview when start-at or strict changes
-  document.getElementById("start-at").addEventListener("input", refreshPreview);
-  document.getElementById("strict-mode").addEventListener("change", refreshPreview);
-
-  // Split button
-  document.getElementById("split-btn").addEventListener("click", runSplit);
-});
-
-// ── Main Split Runner ─────────────────────────────────────────────────────────
+// ── Main split runner ─────────────────────────────────────────────────────────
 
 async function runSplit() {
   clearWarning();
@@ -503,19 +530,25 @@ async function runSplit() {
   setProgress("Loading files…");
 
   try {
-    const [pdfBuf, namesText] = await Promise.all([pdfFile.arrayBuffer(), namesFile.text()]);
+    const [pdfBuf, namesText] = await Promise.all([
+      pdfFile.arrayBuffer(),
+      namesFile.text(),
+    ]);
 
     setProgress("Loading PDF…");
+
     let pdfDoc;
     try {
-      pdfDoc = await PDFLib.PDFDocument.load(pdfBuf, password ? { password } : {});
+      const loadOpts = password ? { password } : {};
+      pdfDoc = await PDFLib.PDFDocument.load(pdfBuf, loadOpts);
     } catch (e) {
       if (e.message && e.message.toLowerCase().includes("encrypt"))
         throw new Error("This PDF is password-protected. Enter the password in Options.");
       throw e;
     }
 
-    document.getElementById("stat-pages").textContent = pdfDoc.getPageCount();
+    pdfPageCount = pdfDoc.getPageCount();
+    document.getElementById("stat-pages").textContent = pdfPageCount;
 
     const lines = readLines(namesText);
     if (!lines.length) throw new Error("Names file is empty or contains only comments.");
@@ -524,16 +557,20 @@ async function runSplit() {
     let warnings = [];
 
     setProgress("Splitting pages…");
+
     if (mode === "counts") {
-      warnings = await splitCounts({ pdfDoc, items: parseCounts(lines), startAt, strict, zip, folderName });
+      const items = parseCounts(lines);
+      warnings = await splitCounts({ pdfDoc, items, startAt, strict, zip, folderName });
     } else {
-      warnings = await splitRanges({ pdfDoc, items: parseRanges(lines), strict, zip, folderName });
+      const items = parseRanges(lines);
+      warnings = await splitRanges({ pdfDoc, items, strict, zip, folderName });
     }
 
-    if (warnings.length) showWarning("⚠ " + warnings.join(" · "));
+    if (warnings.length) showWarning("⚠ " + warnings.join("  |  "));
 
     setProgress("Building ZIP…");
     const zipBlob = await zip.generateAsync({ type: "blob" });
+
     hideProgress();
 
     const a = document.createElement("a");
