@@ -1,126 +1,175 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice Splitter</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice Splitter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div class="app-container">
-        <header class="app-header">
-            <div class="app-logo">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
-                </svg>
-            </div>
-            <div>
-                <h1>Invoice Splitter</h1>
-                <p class="subtitle">Split multi-page PDFs into individually named files &mdash; runs entirely in your browser</p>
-            </div>
-        </header>
+  <div class="page-wrapper">
 
-        <main class="app-main">
-            <form id="splitForm">
-
-                <div class="step-card">
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        <h2>Select PDF File</h2>
-                        <p>Choose the multi-page PDF you want to split into individual pages.</p>
-                        <div class="file-drop-zone" id="pdfDropZone">
-                            <input type="file" id="pdfInput" name="pdf" accept=".pdf" hidden>
-                            <div class="drop-zone-content">
-                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                    <polyline points="14 2 14 8 20 8"/>
-                                </svg>
-                                <span class="drop-text">Click to browse or drag & drop your PDF here</span>
-                                <span class="file-name" id="pdfFileName"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="step-card">
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        <h2>Select Names File</h2>
-                        <p>A text file (.txt) with one name per line. Each name becomes a file name for the corresponding page.</p>
-                        <div class="file-drop-zone" id="namesDropZone">
-                            <input type="file" id="namesInput" name="names" accept=".txt,.csv,.text" hidden>
-                            <div class="drop-zone-content">
-                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                    <polyline points="14 2 14 8 20 8"/>
-                                    <line x1="16" y1="13" x2="8" y2="13"/>
-                                    <line x1="16" y1="17" x2="8" y2="17"/>
-                                </svg>
-                                <span class="drop-text">Click to browse or drag & drop your names file here</span>
-                                <span class="file-name" id="namesFileName"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="step-card">
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        <h2>Output Folder Name</h2>
-                        <p>Choose a name for the folder your split PDFs will be placed in. When you extract the ZIP, everything will be inside this folder.</p>
-                        <input type="text" id="outputFolder" name="output_folder" class="text-input" placeholder="e.g. SAP-Ready Invoices" value="SAP-Ready Invoices">
-                    </div>
-                </div>
-
-                <div id="previewSection" class="preview-section" style="display: none;">
-                    <div class="preview-header">
-                        <h2>Preview</h2>
-                        <div id="matchStatus" class="match-status"></div>
-                    </div>
-                    <div class="preview-details">
-                        <div class="detail-card">
-                            <span class="detail-label">PDF Pages</span>
-                            <span class="detail-value" id="pageCount">-</span>
-                        </div>
-                        <div class="detail-card">
-                            <span class="detail-label">Names Found</span>
-                            <span class="detail-value" id="namesCount">-</span>
-                        </div>
-                    </div>
-                    <div class="names-preview" id="namesPreview"></div>
-                </div>
-
-                <div class="action-bar">
-                    <button type="submit" class="btn-primary" id="splitBtn" disabled>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 5v14M5 12l7 7 7-7"/>
-                        </svg>
-                        <span>Split & Download</span>
-                    </button>
-                </div>
-            </form>
-
-            <div id="statusMessage" class="status-message" style="display: none;"></div>
-        </main>
-
-        <footer class="app-footer">
-            <p>Invoice Splitter v1.0 &mdash; Static GitHub Pages Build</p>
-        </footer>
-    </div>
-
-    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
-        <div class="loading-spinner">
-            <div class="spinner"></div>
-            <p>Splitting your PDF...</p>
+    <header>
+      <div class="header-inner">
+        <div class="logo-mark">IS</div>
+        <div>
+          <h1>Invoice Splitter</h1>
+          <p class="tagline">Split multi-page PDFs into individually named files — runs entirely in your browser</p>
         </div>
+      </div>
+    </header>
+
+    <main>
+
+      <!-- STEP 1: PDF -->
+      <section class="card" id="step-pdf">
+        <div class="step-label"><span>01</span> PDF File</div>
+        <div class="drop-zone" id="pdf-drop" tabindex="0" role="button" aria-label="Select PDF file">
+          <div class="drop-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          </div>
+          <p class="drop-primary">Click to browse or drag &amp; drop</p>
+          <p class="drop-secondary">PDF file (.pdf)</p>
+          <input type="file" id="pdf-input" accept=".pdf" hidden />
+        </div>
+        <div class="file-badge hidden" id="pdf-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="pdf-badge-name">—</span>
+          <button class="badge-remove" id="pdf-remove" aria-label="Remove PDF">×</button>
+        </div>
+      </section>
+
+      <!-- STEP 2: Names File -->
+      <section class="card" id="step-names">
+        <div class="step-label"><span>02</span> Names File</div>
+
+        <!-- Mode toggle -->
+        <div class="mode-toggle-group">
+          <label class="mode-label">Splitting mode</label>
+          <div class="mode-toggle" role="group">
+            <button class="mode-btn active" id="mode-counts" data-mode="counts">Sequential counts</button>
+            <button class="mode-btn" id="mode-ranges" data-mode="ranges">Explicit ranges</button>
+          </div>
+        </div>
+
+        <!-- Format hint -->
+        <div class="format-hint" id="hint-counts">
+          <strong>counts mode</strong> — one invoice per line. Optionally append a page count after a comma, pipe, or tab.
+          <pre>Acme-Invoice-001
+BigCo-Invoice-002, 3
+Vendor-Invoice-003 | 2
+# lines starting with # are ignored</pre>
+        </div>
+        <div class="format-hint hidden" id="hint-ranges">
+          <strong>ranges mode</strong> — one invoice per line with an explicit page range <code>start-end</code> (1-based, inclusive).
+          <pre>Acme-Invoice-001, 1-1
+BigCo-Invoice-002, 2-4
+Vendor-Invoice-003 | 5-6
+# lines starting with # are ignored</pre>
+        </div>
+
+        <div class="drop-zone" id="names-drop" tabindex="0" role="button" aria-label="Select names file">
+          <div class="drop-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </div>
+          <p class="drop-primary">Click to browse or drag &amp; drop</p>
+          <p class="drop-secondary">Plain text file (.txt)</p>
+          <input type="file" id="names-input" accept=".txt,text/plain" hidden />
+        </div>
+        <div class="file-badge hidden" id="names-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="names-badge-name">—</span>
+          <button class="badge-remove" id="names-remove" aria-label="Remove names file">×</button>
+        </div>
+      </section>
+
+      <!-- STEP 3: Options -->
+      <section class="card" id="step-options">
+        <div class="step-label"><span>03</span> Options</div>
+
+        <div class="options-grid">
+
+          <div class="option-group">
+            <label class="option-label" for="output-folder">Output folder name</label>
+            <input type="text" id="output-folder" class="text-input" value="invoices" placeholder="invoices" />
+            <p class="option-hint">All split PDFs will be inside this folder in the downloaded ZIP.</p>
+          </div>
+
+          <div class="option-group" id="start-at-group">
+            <label class="option-label" for="start-at">Start at page (counts mode)</label>
+            <input type="number" id="start-at" class="text-input narrow" value="1" min="1" />
+            <p class="option-hint">First PDF page to begin consuming (1-based). Useful to skip cover pages.</p>
+          </div>
+
+          <div class="option-group">
+            <label class="option-label" for="password">PDF password <span class="optional">(optional)</span></label>
+            <input type="password" id="password" class="text-input" placeholder="Leave blank if not encrypted" />
+            <p class="option-hint">Encrypted PDFs require a password to split.</p>
+          </div>
+
+          <div class="option-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="strict-mode" />
+              <span class="checkbox-custom"></span>
+              <span>Strict validation</span>
+            </label>
+            <p class="option-hint">
+              Counts mode: total counts must exactly cover all remaining pages.<br />
+              Ranges mode: enabled by default — overlapping ranges will throw an error.
+            </p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- PREVIEW + RUN -->
+      <section class="card" id="step-run">
+        <div class="step-label"><span>04</span> Preview &amp; Split</div>
+
+        <div class="preview-stats" id="preview-stats">
+          <div class="stat">
+            <span class="stat-val" id="stat-pages">—</span>
+            <span class="stat-key">PDF pages</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat">
+            <span class="stat-val" id="stat-invoices">—</span>
+            <span class="stat-key">invoices in names file</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat">
+            <span class="stat-val" id="stat-mode">—</span>
+            <span class="stat-key">mode</span>
+          </div>
+        </div>
+
+        <div class="warning-box hidden" id="warn-box"></div>
+
+        <button class="split-btn" id="split-btn" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Split &amp; Download ZIP
+        </button>
+      </section>
+
+    </main>
+
+    <div class="overlay hidden" id="progress-overlay">
+      <div class="progress-box">
+        <div class="spinner"></div>
+        <p id="progress-msg">Splitting your PDF…</p>
+      </div>
     </div>
 
-    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="app.js"></script>
+    <footer>
+      Invoice Splitter v2.0 — Static GitHub Pages Build &nbsp;·&nbsp; No data leaves your browser
+    </footer>
+
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
