@@ -100,21 +100,6 @@ Vendor-Invoice-003 | 5-6
             <p class="option-hint">Skip leading pages, e.g. a cover sheet.</p>
           </div>
 
-          <div class="option-group">
-            <label class="option-label" for="password">PDF password <span class="optional">(optional)</span></label>
-            <input type="password" id="password" class="text-input" placeholder="Leave blank if unencrypted" />
-            <p class="option-hint">Required for password-protected PDFs.</p>
-          </div>
-
-          <div class="option-group checkbox-group">
-            <label class="checkbox-label">
-              <input type="checkbox" id="strict-mode" />
-              <span class="checkbox-custom"></span>
-              <span>Strict validation</span>
-            </label>
-            <p class="option-hint">Error on page count mismatches or overlapping ranges instead of warning.</p>
-          </div>
-
         </div>
       </section>
 
@@ -145,8 +130,9 @@ Vendor-Invoice-003 | 5-6
           </div>
         </div>
 
-        <!-- Match preview table (shown when both files loaded) -->
+        <!-- Match preview table (shown when names file is loaded) -->
         <div id="preview-table-wrap" class="hidden">
+          <div id="preview-banner"></div>
           <table class="preview-table" aria-label="Page assignment preview">
             <thead>
               <tr>
@@ -158,7 +144,6 @@ Vendor-Invoice-003 | 5-6
             </thead>
             <tbody id="preview-tbody"></tbody>
           </table>
-          <div class="preview-legend" id="preview-legend"></div>
         </div>
 
         <div class="warning-box hidden" id="warn-box"></div>

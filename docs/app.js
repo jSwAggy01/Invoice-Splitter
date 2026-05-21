@@ -218,35 +218,50 @@ const STATUS_META = {
 };
 
 function renderPreviewTable(rows) {
-  const wrap  = document.getElementById("preview-table-wrap");
-  const tbody = document.getElementById("preview-tbody");
-  const legend = document.getElementById("preview-legend");
+  const wrap   = document.getElementById("preview-table-wrap");
+  const banner = document.getElementById("preview-banner");
+  const tbody  = document.getElementById("preview-tbody");
 
   if (!rows.length) { wrap.classList.add("hidden"); return; }
 
+  // ── Banner ──────────────────────────────────────────────
+  // Only show a meaningful banner when the PDF is loaded (no "pending" rows)
+  const hasPending  = rows.some(r => r.status === "pending");
+  const hasProblems = rows.some(r => ["partial", "missing", "overflow", "overlap"].includes(r.status));
+
+  if (hasPending) {
+    banner.className = "preview-banner banner-pending";
+    banner.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Load a PDF to see page assignments`;
+  } else if (!hasProblems) {
+    banner.className = "preview-banner banner-ok";
+    banner.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> All invoices matched — ready to split`;
+  } else {
+    // Count problem rows (exclude overflow which is informational)
+    const issueRows = rows.filter(r => ["partial", "missing", "overlap"].includes(r.status));
+    const overflowRows = rows.filter(r => r.status === "overflow");
+    const parts = [];
+    if (issueRows.length) parts.push(`${issueRows.length} issue${issueRows.length > 1 ? "s" : ""} found`);
+    if (overflowRows.length) {
+      const extra = overflowRows.reduce((sum, r) => {
+        const m = r.pageLabel.match(/(\d+)–(\d+)/);
+        return sum + (m ? parseInt(m[2]) - parseInt(m[1]) + 1 : 1);
+      }, 0);
+      parts.push(`${extra} leftover page${extra > 1 ? "s" : ""}`);
+    }
+    banner.className = "preview-banner banner-warn";
+    banner.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ${parts.join(" · ")} — review before splitting`;
+  }
+
+  // ── Rows ────────────────────────────────────────────────
   tbody.innerHTML = rows.map(r => {
     const meta = STATUS_META[r.status] || STATUS_META.ok;
-    const nameEscaped = escHtml(r.name);
-    const pageEscaped = escHtml(r.pageLabel);
     return `<tr>
-      <td class="col-idx">${r.index}</td>
-      <td class="col-name">${nameEscaped}</td>
-      <td class="col-pages">${pageEscaped}</td>
+      <td class="col-idx">${escHtml(String(r.index))}</td>
+      <td class="col-name">${escHtml(r.name)}</td>
+      <td class="col-pages">${escHtml(r.pageLabel)}</td>
       <td class="col-status"><span class="pill ${meta.cls}">${meta.label}</span></td>
     </tr>`;
   }).join("");
-
-  // Build legend from statuses actually present
-  const seen = new Set(rows.map(r => r.status));
-  const legendItems = [];
-  for (const [key, meta] of Object.entries(STATUS_META)) {
-    if (seen.has(key)) {
-      legendItems.push(`<span class="pill ${meta.cls}">${meta.label}</span>`);
-    }
-  }
-  legend.innerHTML = legendItems.length
-    ? `<span style="color:var(--text-dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;">Legend:</span> ${legendItems.join(" ")}`
-    : "";
 
   wrap.classList.remove("hidden");
 }
@@ -424,7 +439,7 @@ function setMode(m) {
 
 // ── Core split functions ──────────────────────────────────────────────────────
 
-async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) {
+async function splitCounts({ pdfDoc, items, startAt, zip, folderName }) {
   const numPages = pdfDoc.getPageCount();
   const startIdx = startAt - 1;
 
@@ -435,12 +450,7 @@ async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) 
   const remaining = numPages - startIdx;
   const warnings = [];
 
-  if (strict && startIdx + totalRequested !== numPages) {
-    throw new Error(
-      `Strict mode: total counts (${totalRequested}) from start-at=${startAt} ` +
-      `must exactly cover remaining pages (${remaining}).`
-    );
-  } else if (startIdx + totalRequested > numPages) {
+  if (startIdx + totalRequested > numPages) {
     warnings.push("Counts exceed available pages — last invoice(s) truncated.");
   } else if (startIdx + totalRequested < numPages) {
     warnings.push(`Counts cover ${totalRequested} of ${remaining} remaining pages. ${remaining - totalRequested} leftover page(s) saved separately.`);
@@ -464,7 +474,7 @@ async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) 
   }
 
   // Leftovers
-  if (cursor < numPages && !strict) {
+  if (cursor < numPages) {
     for (let p = cursor; p < numPages; p++) {
       const newPdf = await PDFLib.PDFDocument.create();
       const [page] = await newPdf.copyPages(pdfDoc, [p]);
@@ -478,7 +488,7 @@ async function splitCounts({ pdfDoc, items, startAt, strict, zip, folderName }) 
   return warnings;
 }
 
-async function splitRanges({ pdfDoc, items, strict, zip, folderName }) {
+async function splitRanges({ pdfDoc, items, zip, folderName }) {
   const numPages = pdfDoc.getPageCount();
   const warnings = [];
 
@@ -490,9 +500,7 @@ async function splitRanges({ pdfDoc, items, strict, zip, folderName }) {
   const sorted = [...items].sort((a, b) => a.start - b.start);
   for (let i = 1; i < sorted.length; i++) {
     if (sorted[i].start <= sorted[i-1].end) {
-      const msg = `Overlapping ranges: "${sorted[i-1].name}" ${sorted[i-1].start}-${sorted[i-1].end} and "${sorted[i].name}" ${sorted[i].start}-${sorted[i].end}.`;
-      if (strict) throw new Error(msg);
-      warnings.push(msg);
+      warnings.push(`Overlapping ranges: "${sorted[i-1].name}" ${sorted[i-1].start}-${sorted[i-1].end} and "${sorted[i].name}" ${sorted[i].start}-${sorted[i].end}.`);
     }
   }
 
@@ -523,9 +531,7 @@ async function runSplit() {
 
   const folderName = (document.getElementById("output-folder").value.trim() || "invoices")
     .replace(/[<>:"/\\|?*]/g, "").trim() || "invoices";
-  const startAt  = parseInt(document.getElementById("start-at").value, 10) || 1;
-  const strict   = document.getElementById("strict-mode").checked;
-  const password = document.getElementById("password").value;
+  const startAt = parseInt(document.getElementById("start-at").value, 10) || 1;
 
   setProgress("Loading files…");
 
@@ -539,11 +545,10 @@ async function runSplit() {
 
     let pdfDoc;
     try {
-      const loadOpts = password ? { password } : {};
-      pdfDoc = await PDFLib.PDFDocument.load(pdfBuf, loadOpts);
+      pdfDoc = await PDFLib.PDFDocument.load(pdfBuf);
     } catch (e) {
       if (e.message && e.message.toLowerCase().includes("encrypt"))
-        throw new Error("This PDF is password-protected. Enter the password in Options.");
+        throw new Error("This PDF is password-protected and cannot be opened.");
       throw e;
     }
 
@@ -560,10 +565,10 @@ async function runSplit() {
 
     if (mode === "counts") {
       const items = parseCounts(lines);
-      warnings = await splitCounts({ pdfDoc, items, startAt, strict, zip, folderName });
+      warnings = await splitCounts({ pdfDoc, items, startAt, zip, folderName });
     } else {
       const items = parseRanges(lines);
-      warnings = await splitRanges({ pdfDoc, items, strict, zip, folderName });
+      warnings = await splitRanges({ pdfDoc, items, zip, folderName });
     }
 
     if (warnings.length) showWarning("⚠ " + warnings.join("  |  "));
